@@ -6,7 +6,7 @@ CasioMailBox my_inbox[]={
 #define BOX_WAIT my_inbox[0]
   ,MAILBOX('L',true) // brightness of built-in LED (0..255)
 #define BOX_LED my_inbox[1] // sent index for subsequent read
-  ,MAILBOX('I',false) // number of milliseconds to rotate (negative=ccw)
+  ,MAILBOX('I',true) // select analog input to read with 'V'
 #define BOX_INDEX my_inbox[2] // sent index for subsequent read
 };
 
@@ -52,9 +52,11 @@ long lastbeat=0;
 bool wait_in_progress=false;
 long wait_started=0;
 
+int analog_pin=0;
+
 void loop() {
   long timer=millis();
-  // Hartbeat indicator
+  // Heartbeat indicator
   if(timer>lastbeat+10000) {
     lastbeat=timer;
     Serial.print("Timer=");
@@ -67,25 +69,42 @@ void loop() {
 
   /* Try on your calculator:
    * RECEIVE(T)
-   * then incpect T -- should show current timer.
+   * then inspect T -- should show current timer.
    * Look for hook trace in serial monitor window.
    */
   BOX_MILLIS(millis());
 
   /* Try on your calculator:
    * RECEIVE(U)
-   * then incpect U -- should show current timer in microseconds.
+   * then inspect U -- should show current timer in microseconds.
    */
   BOX_MICROS(micros());
 
+  /* Try on your calculator:
+   * 1->I:SEND(I)
+   * This will setup Arduino to read analog value from analog pin 1.
+   */
   if( BOX_INDEX.fresh ) {
-    Serial.print("Requested index ");
+    Serial.print("From now on 'V' provides value of analog index ");
     Serial.println(BOX_INDEX.value);
+    analog_pin=(int)BOX_INDEX.value;
     BOX_INDEX.fresh=false;
   }
 
+  /*
+   * Connect potentiometer to analog pin 1, 5 volts and ground. Set it to some
+   * position. On your calculator execute
+   * RECEIVE(V):V
+   * and note the value. Then change the potentiometer position and execute
+   * RECEIVE(V):V
+   * once more. Note how the value has changed.
+   */
+  if( analog_pin>0 ) {
+     BOX_VALUE(analogRead(analog_pin)); 
+  }
+
   /* Try on your calculator:
-   * 3000→W
+   * 3000->W
    * SEND(W)
    * -- Calculator should remain on hold during SEND() for ~3000 ms before
    *    continuing. Also watch serial monitor window for feedback.
