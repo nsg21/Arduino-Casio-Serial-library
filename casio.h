@@ -24,6 +24,12 @@
  *
  */
 
+/* Physical serial interface which is attached to CASIO communication
+ * It can be &Serial on arduinos without extra serial interfaces, but extreme
+ * care should be taken to ensure that nothing else, especially debug messages
+ * are transmitted over it.
+ */
+extern HardwareSerial *casio_serial;
 
 // variable names are
 // 'A'..'Z'
@@ -33,8 +39,6 @@
 #define CASIO_LOWR 0xcd
 #define CASIO_THETA 0xce
 
-
-#define CalSerial Serial3
 
 #define CASIO_STATIC_MAILBOX
 

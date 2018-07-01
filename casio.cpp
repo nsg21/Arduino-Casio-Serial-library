@@ -32,6 +32,7 @@
 
 #include "casio.h"
 
+HardwareSerial *casio_serial=NULL;
 CasioMailBox *casio_inboxes=NULL;
 CasioMailBox *casio_outboxes=NULL;
 
@@ -446,6 +447,7 @@ int last_state;
 
 void casio_poll()
 {
+  if( NULL==casio_serial ) return;
   int rd;
   if( cccp_state!=last_state ){
     last_change=millis();
@@ -459,12 +461,12 @@ void casio_poll()
   last_state=cccp_state;
   while(true) switch(cccp_state){
     case CCCP_IDLE:
-      if( 0==CalSerial.available() ) return;
-      if( CalSerial.read()==CASIO_ATT ) cccp_state=CCCP_ALERT;
+      if( 0==casio_serial->available() ) return;
+      if( casio_serial->read()==CASIO_ATT ) cccp_state=CCCP_ALERT;
       break;
     case CCCP_ALERT:
-      if( 0==CalSerial.availableForWrite() ) return;
-      CalSerial.write(CASIO_READY);
+      if( 0==casio_serial->availableForWrite() ) return;
+      casio_serial->write(CASIO_READY);
 
     case CCCP_GETHEADER0:
       cccp_buffer_index=0;
@@ -472,15 +474,15 @@ void casio_poll()
       cccp_state=CCCP_GETHEADER;
     case CCCP_GETHEADER:
       // TODO: timeout
-      if( 0==CalSerial.available() ) return;
-      cccp_buffer[cccp_buffer_index++]=CalSerial.read();
+      if( 0==casio_serial->available() ) return;
+      cccp_buffer[cccp_buffer_index++]=casio_serial->read();
       if( cccp_buffer_index>=cccp_buffer_size )
         cccp_state=cccp_analyze_header(cccp_buffer);
       break;
 
     case CCCP_SEND_ACK1:
-      if( 0==CalSerial.availableForWrite() ) return;
-      CalSerial.write(CASIO_ACK);
+      if( 0==casio_serial->availableForWrite() ) return;
+      casio_serial->write(CASIO_ACK);
       if( cccp_buffer_size==0 ) {
         // not expecting :0101, jump right to :END
         cccp_state=CCCP_GETHEADER0;
@@ -493,8 +495,8 @@ void casio_poll()
       cccp_state=CCCP_SEND_WAITDATA;
     case CCCP_SEND_WAITDATA:
       // expecting :0101
-      if( 0==CalSerial.available() ) return;
-      cccp_buffer[cccp_buffer_index++]=CalSerial.read();
+      if( 0==casio_serial->available() ) return;
+      cccp_buffer[cccp_buffer_index++]=casio_serial->read();
       if( cccp_buffer_index>=cccp_buffer_size )
         cccp_state=cccp_analyze_senddata(cccp_buffer,cccp_buffer_size);
       break;
@@ -513,8 +515,8 @@ void casio_poll()
       // happen: immediate flag should not change and once fresness flag is
       // clear it should not be set until the next SEND packet arrives. But it
       // is logically possible.
-      if( 0==CalSerial.availableForWrite() ) return;
-      CalSerial.write(CASIO_ACK);
+      if( 0==casio_serial->availableForWrite() ) return;
+      casio_serial->write(CASIO_ACK);
       cccp_state=CCCP_GETHEADER0;
       // Expect to get :END packet which leads to IDLE, but if there is some
       // other valid :VAL or :REQ packet, it might as well be acted upon.
@@ -528,12 +530,12 @@ void casio_poll()
         return;
       cccp_state=CCCP_RECEIVE_ACK1;
     case CCCP_RECEIVE_ACK1:
-      if( 0==CalSerial.availableForWrite() ) return;
-      CalSerial.write(CASIO_ACK);
+      if( 0==casio_serial->availableForWrite() ) return;
+      casio_serial->write(CASIO_ACK);
       cccp_state=CCCP_RECEIVE_CLIENTWAIT1;
     case CCCP_RECEIVE_CLIENTWAIT1:
-      if( 0==CalSerial.available() ) return;
-      if( CalSerial.read()!=CASIO_ACK ) {
+      if( 0==casio_serial->available() ) return;
+      if( casio_serial->read()!=CASIO_ACK ) {
         cccp_state=CCCP_IDLE;
         break;
       }
@@ -563,15 +565,15 @@ void casio_poll()
 #endif
     case CCCP_RECEIVE_VAL:
       // transmit :VAL buffer
-      if( 0==CalSerial.availableForWrite() ) return;
+      if( 0==casio_serial->availableForWrite() ) return;
       if( cccp_buffer_index<cccp_buffer_size ) {
-        CalSerial.write(cccp_buffer[cccp_buffer_index++]);
+        casio_serial->write(cccp_buffer[cccp_buffer_index++]);
         break;
       }
       cccp_state=CCCP_RECEIVE_CLIENTWAIT2;
     case CCCP_RECEIVE_CLIENTWAIT2:
-      if( 0==CalSerial.available() ) return;
-      rd=CalSerial.read();
+      if( 0==casio_serial->available() ) return;
+      rd=casio_serial->read();
       if( rd==CASIO_RETRY ) {
         // resend already populated buffer
         cccp_buffer_index=0;
@@ -593,16 +595,16 @@ void casio_poll()
       cccp_state=CCCP_RECEIVE_0101;
     case CCCP_RECEIVE_0101:
       // transmit 0101 buffer
-      if( 0==CalSerial.availableForWrite() ) return;
+      if( 0==casio_serial->availableForWrite() ) return;
       if( cccp_buffer_index<cccp_buffer_size ) {
-        CalSerial.write(cccp_buffer[cccp_buffer_index++]);
+        casio_serial->write(cccp_buffer[cccp_buffer_index++]);
         break;
       }
       cccp_state=CCCP_RECEIVE_CLIENTWAIT3;
 
     case CCCP_RECEIVE_CLIENTWAIT3:
-      if( 0==CalSerial.available() ) return;
-      rd=CalSerial.read();
+      if( 0==casio_serial->available() ) return;
+      rd=casio_serial->read();
       if( rd==CASIO_RETRY ) {
          // TODO? repopulate buffer with fresher data
          cccp_buffer_index=0;
@@ -623,20 +625,20 @@ void casio_poll()
       cccp_buffer_index=0;
     case CCCP_RECEIVE_END:
       // transmit :END buffer
-      if( 0==CalSerial.availableForWrite() ) return;
+      if( 0==casio_serial->availableForWrite() ) return;
       if( cccp_buffer_index<cccp_buffer_size ) {
-        CalSerial.write(cccp_buffer[cccp_buffer_index++]);
+        casio_serial->write(cccp_buffer[cccp_buffer_index++]);
         break;
       }
       cccp_state=CCCP_IDLE;
       break;
       // send value requested value
     case CCCP_NACK:
-      if( 0==CalSerial.availableForWrite() ) return;
+      if( 0==casio_serial->availableForWrite() ) return;
 #ifdef CASIO_DEBUG
       Serial.println("Sending NACK");
 #endif
-      CalSerial.write(CASIO_ERROR);
+      casio_serial->write(CASIO_ERROR);
       cccp_state=CCCP_IDLE;
       break;
       

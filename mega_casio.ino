@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include "casio.h"
 #include <stdlib.h>
 
@@ -25,17 +26,24 @@ void hook_example(char name) {
 }
 
 void setup() {
+  // debug and monitoring
   Serial.begin(9600);
-  CalSerial.begin(9600);
-  
+
+  // Setup communication interface
+  casio_serial=&Serial3;
+  casio_serial->begin(9600);
   Serial.println("Listening on Serial3" );
 
+  // Setup mailboxes
   fill_static_links(&my_inbox[0], sizeof(my_inbox)/sizeof(CasioMailBox));
   fill_static_links(&my_outbox[0], sizeof(my_outbox)/sizeof(CasioMailBox));
   casio_inboxes=&my_inbox[0];
   casio_outboxes=&my_outbox[0];
   casio_receive_hook=&hook_example;
+
+  // Other initializations
   pinMode(LED_BUILTIN,OUTPUT);
+  
   Serial.println("Finished setup" );
 }
 
