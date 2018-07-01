@@ -4,8 +4,10 @@
 MailBox my_inbox[]={
   MAILBOX('W',false) // request by a calc: number of milliseconds to delay
 #define BOX_WAIT my_inbox[0]
+  ,MAILBOX('L',true) // brightness of built-in LED (0..255)
+#define BOX_LED my_inbox[1] // sent index for subsequent read
   ,MAILBOX('I',false) // number of milliseconds to rotate (negative=ccw)
-#define BOX_INDEX my_inbox[1] // sent index for subsequent read
+#define BOX_INDEX my_inbox[2] // sent index for subsequent read
 };
 
 MailBox my_outbox[]={
@@ -33,6 +35,7 @@ void setup() {
   cccp_inboxes=&my_inbox[0];
   cccp_outboxes=&my_outbox[0];
   cccp_hook_receive=&hook_example;
+  pinMode(LED_BUILTIN,OUTPUT);
   Serial.println("Finished setup" );
 }
 
@@ -102,6 +105,22 @@ void loop() {
     }
   }
 
+  /* Try on your calculator:
+   * 0→L
+   * SEND(L)
+   * -- Built-in LED should go OFF
+   * 100→L
+   * SEND(L)
+   * -- Built-in LED should go full ON
+   * 5→L
+   * SEND(L)
+   * -- Built-in LED should go dim, but still visible ON
+   * Note that this mailbox is marked immediate.
+   */
+  if( BOX_LED.fresh ) {
+    analogWrite(LED_BUILTIN,constrain(map((int)BOX_LED.value,0,100,0,255),0,255));
+    BOX_LED.fresh=false;
+  }
   /* I have irrational fear of busy waiting, so ... */
   delay(1);
 
