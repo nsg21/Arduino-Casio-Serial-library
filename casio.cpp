@@ -32,8 +32,8 @@
 
 #include "casio.h"
 
-MailBox *cccp_inboxes=NULL;
-MailBox *cccp_outboxes=NULL;
+CasioMailBox *casio_inboxes=NULL;
+CasioMailBox *casio_outboxes=NULL;
 
 #define CASIO_DEBUG
 
@@ -41,14 +41,14 @@ void cccp_null_hook(char name)
 {
 }
 
-void (*cccp_hook_receive)(char)=&cccp_null_hook;
+void (*casio_receive_hook)(char)=&cccp_null_hook;
 
 
 // find a mailbox for a name or create one
 
-#ifdef CCCP_STATIC_MAILBOX
+#ifdef CASIO_STATIC_MAILBOX
 // run in setup() to populate links in mailboxes defined literally
-void fill_static_links(MailBox *head, int count)
+void fill_static_links(CasioMailBox *head, int count)
 {
   for(int i=1; i<count; ++i ) {
     head[i-1].next=head+i;
@@ -59,11 +59,11 @@ void fill_static_links(MailBox *head, int count)
 #endif
 
 
-MailBox fakebox;
+CasioMailBox fakebox;
 
-MailBox *get_mailbox(MailBox **head, char name, bool create_if_not_exists)
+CasioMailBox *get_mailbox(CasioMailBox **head, char name, bool create_if_not_exists)
 {
-  MailBox *p=*head;
+  CasioMailBox *p=*head;
   while( NULL!=p ) {
     if( p->name == name ) return p;
     p=p->next;
@@ -72,7 +72,7 @@ MailBox *get_mailbox(MailBox **head, char name, bool create_if_not_exists)
   Serial.print("Not found mailbox for ");
   Serial.println(name);
 #endif
-#ifdef CCCP_STATIC_MAILBOX
+#ifdef CASIO_STATIC_MAILBOX
   fakebox.name=name;
   fakebox.next=NULL;
   fakebox.fresh=true;
@@ -81,7 +81,7 @@ MailBox *get_mailbox(MailBox **head, char name, bool create_if_not_exists)
   return &fakebox;
 #else
   if( !create_if_not_exists ) return NULL;
-  p=(MailBox*)malloc(sizeof(MailBox));
+  p=(CasioMailBox*)malloc(sizeof(CasioMailBox));
   if( NULL==p ) return NULL; // cannot allocate
   // create new and update head
   p->name=name;
@@ -144,7 +144,16 @@ enum CCCP_STATE {
 
 
 int cccp_state=CCCP_IDLE;
-MailBox *cccp_actionbox;
+
+/* Mailbox for currently progressing request */
+CasioMailBox *cccp_actionbox;
+
+/* Protocol communication symbols */
+#define CASIO_ATT 0x15
+#define CASIO_READY 0x13 // Code A "Ok"
+#define CASIO_ACK 0x06   // Code B "Ok"
+#define CASIO_RETRY 0x05
+#define CASIO_ERROR 0x22
 
 // offsets in a buffer
 #define CASIO_B_NAME 11
@@ -162,7 +171,9 @@ MailBox *cccp_actionbox;
 #define CASIO_R_SIZE 16 // real value buffer size
 #define CASIO_C_SIZE 26 // complex value buffer size
 
-#define CASIO_DEFAULT_VALUE 987.654 // value to use for non-existent mailboxes
+// value to use for non-existent mailboxes
+// TODO: something better than this
+#define CASIO_DEFAULT_VALUE 987.654
 
 byte cccp_buffer[CASIO_B_SIZE];
 int cccp_buffer_index;
@@ -222,11 +233,12 @@ void serial_dump(byte *buffer, size_t size){
 }
 #endif
 
-byte *casio_double_fmt(byte *buffer, double value)
+// Convert Arduino floating point number into 10-byte CASIO buffer format
+byte *casio_number_format(byte *buffer, double value)
 {
   char fmtbuf[32];
   int sign=0;
-#ifdef CASIO_DEBUG
+#ifdef CASIO_DEBUG_V
   Serial.print("Formatting ");
   Serial.println(value);
 #endif
@@ -288,7 +300,7 @@ OVERFLOW:
   }
   buffer[8]=sign;
   buffer[9]=bcd(exp);
-#ifdef CASIO_DEBUG
+#ifdef CASIO_DEBUG_V
   Serial.print("Buffer=");
   serial_dump(buffer,10);
   Serial.print("\n");
@@ -306,16 +318,20 @@ OVERFLOW:
  * dddd dddd s e
  * dddd dddd s e
  * Σ
+ *
+ * CASIO 10 byte buffer:
+ * 0  1  2  3   4  5  6  7   8  9
+ * 0d dd dd dd  dd dd dd dd  ss ee 
  */
 
-// 0  1  2  3   4  5  6  7   8  9
-// 0d dd dd dd  dd dd dd dd  ss ee 
-double casio_double_parse(byte *buffer)
+// Convert 10-byte buffer representing CASIO floating point number into Arduino
+// floating point number.
+double casio_number_parse(byte *buffer)
 {
   int i;
   double r=0.0;
   int exp,sign;
-#ifdef CASIO_DEBUG
+#ifdef CASIO_DEBUG_V
   Serial.print("Parse");
   serial_dump(buffer,10);
 #endif
@@ -323,7 +339,7 @@ double casio_double_parse(byte *buffer)
   r=r/1e14;
   sign=buffer[8];
   exp=fbcd(buffer[9]);
-#ifdef CASIO_DEBUG
+#ifdef CASIO_DEBUG_V
   Serial.print("mantissa=");
   Serial.println(r);
   Serial.print("exp=");
@@ -336,22 +352,16 @@ double casio_double_parse(byte *buffer)
   return r*pow(10.0,exp);
 }
 
-void fmt_double(byte *buffer, double val)
-{
-  int sign=0;
-  if( val<0.0 ) {
-    sign=sign | CASIO_NEG;
-    val=-val;
-  }
-  
-}
- 
-
 const char TAG_VM[] PROGMEM = {'V','M'}; // named variable
 const char TAG_PC[] PROGMEM = {'P','C'}; // picture
 const char TAG_LT[] PROGMEM = {'L','T'}; // list
 const char TAG_MT[] PROGMEM = {'M','T'}; // matrix
+
 const char TAG_Variable[] PROGMEM = {'V','a','r','i','a','b','l','e'};
+/* Lists have "List n" or "List nn"
+ * Matrices have "Mat N" at this offset
+ */
+
 
 int cccp_analyze_header(byte *buffer)
 {
@@ -359,18 +369,20 @@ int cccp_analyze_header(byte *buffer)
   // :REQ -> CCCP_RECEIVE_WAITDATA
   // :VAL -> CCCP_SEND_ACK1
   // setup cccp_actionbox
-#ifdef CASIO_DEBUG
+#ifdef CASIO_DEBUG_V
   Serial.print("Received header ");
   serial_dump(buffer, CASIO_B_SIZE);
 #endif
-  if( buffer[CASIO_B_CHECKSUM]!=casio_checksum(buffer, CASIO_B_SIZE-1) ) return CCCP_NACK;
+  // TODO: request resend instead of NACK
+  if( buffer[CASIO_B_CHECKSUM]!=casio_checksum(buffer, CASIO_B_SIZE-1) ) goto REJECT_HEADER;
   if( 0==memcmp_P(&buffer[0],HEADER_END,5) ) return CCCP_IDLE;
   if( 0==memcmp_P(&buffer[0],HEADER_VAL,5) ) {
-    // :VAL request, :0101 packet with actual data possibly to follow
-    if( 0!=memcmp_P(&buffer[CASIO_B_RANK],TAG_VM,2) ) return CCCP_NACK;
+    // :VAL, AKA SEND() request
+    // :0101 packet with actual data possibly to follow
+    if( 0!=memcmp_P(&buffer[CASIO_B_RANK],TAG_VM,2) ) goto REJECT_HEADER;
     cccp_actionbox=get_inbox(buffer[CASIO_B_NAME]);
     cccp_varname=buffer[CASIO_B_NAME];
-    if( buffer[CASIO_B_USED1]!=buffer[CASIO_B_USED2] ) return CCCP_NACK;
+    if( buffer[CASIO_B_USED1]!=buffer[CASIO_B_USED2] ) goto REJECT_HEADER;
     switch(buffer[CASIO_B_USED1]) {
       case 0:
         // variable has not been assigned yet, no :0101 to follow
@@ -381,41 +393,51 @@ int cccp_analyze_header(byte *buffer)
         cccp_buffer_size=buffer[CASIO_B_COMPLEX]=='C'?26:16;
         break;
       default:
-        return CCCP_NACK;
+        goto REJECT_HEADER;
     }
     return CCCP_SEND_ACK1;
   }
   if( 0==memcmp_P(&buffer[0],HEADER_REQ,5) ) {
-    // TODO: investigate if there is NACK to respond to valid requests that are
-    // not supproted
-    if( 0!=memcmp_P(&buffer[CASIO_B_RANK],TAG_VM,2) ) return CCCP_NACK;
+    // :REQ, AKA RECEIVE() request
+    if( 0!=memcmp_P(&buffer[CASIO_B_RANK],TAG_VM,2) ) goto REJECT_HEADER;
     cccp_actionbox=get_outbox(buffer[CASIO_B_NAME]);
     cccp_varname=buffer[CASIO_B_NAME];
-    if( NULL!=cccp_hook_receive ) (*cccp_hook_receive)(cccp_varname);
+    if( NULL!=casio_receive_hook ) (*casio_receive_hook)(cccp_varname);
     return CCCP_RECEIVE_WAITDATA;
   }
+REJECT_HEADER:
+#ifdef CASIO_DEBUG
+  Serial.print("!Reject header ");
+  serial_dump(buffer, CASIO_B_SIZE);
+#endif
   return CCCP_NACK;
 }
 
-int cccp_analyze_senddata(byte* buffer)
+int cccp_analyze_senddata(byte* buffer, size_t buffer_size)
 {
   // validate that data in buffer is :0101 of acceptable characteristics
   // decode value
   // populate actionbox
   // move on to CCCP_SEND_EXECUTEDATA
-#ifdef CASIO_DEBUG
+#ifdef CASIO_DEBUG_V
   Serial.print("senddata: ");
-  serial_dump(buffer,cccp_buffer_size);
+  serial_dump(buffer,buffer_size);
 #endif
 
-  if( buffer[cccp_buffer_size-1]!=casio_checksum(buffer, cccp_buffer_size-1) ) return CCCP_NACK;
-  if( 0!=memcmp_P(&buffer[0],HEADER_0101,5) ) return CCCP_NACK;
+  if( buffer[buffer_size-1]!=casio_checksum(buffer, buffer_size-1) ) goto REJECT;
+  if( 0!=memcmp_P(&buffer[0],HEADER_0101,5) ) goto REJECT;
   if( NULL!=cccp_actionbox ) {
-    cccp_actionbox->value=casio_double_parse(&buffer[CASIO_B_RE]);
+    cccp_actionbox->value=casio_number_parse(&buffer[CASIO_B_RE]);
     // TODO? deal with imaginary part if present
     cccp_actionbox->fresh=true;
   }
   return CCCP_SEND_EXECUTEDATA;
+REJECT:
+#ifdef CASIO_DEBUG
+  Serial.print("!Reject senddata ");
+  serial_dump(buffer, buffer_size);
+#endif
+  return CCCP_NACK;
 }
 
 
@@ -474,7 +496,7 @@ void casio_poll()
       if( 0==CalSerial.available() ) return;
       cccp_buffer[cccp_buffer_index++]=CalSerial.read();
       if( cccp_buffer_index>=cccp_buffer_size )
-        cccp_state=cccp_analyze_senddata(cccp_buffer);
+        cccp_state=cccp_analyze_senddata(cccp_buffer,cccp_buffer_size);
       break;
 
     case CCCP_SEND_EXECUTEDATA:
@@ -534,8 +556,8 @@ void casio_poll()
 
       cccp_state=CCCP_RECEIVE_VAL;
       cccp_buffer_index=0;
-#ifdef CASIO_DEBUG
-      Serial.print(":VAL for ");
+#ifdef CASIO_DEBUG_V
+      Serial.print("ready to transmit :VAL for ");
       Serial.println(cccp_varname);
       serial_dump(cccp_buffer,cccp_buffer_size); 
 #endif
@@ -552,20 +574,19 @@ void casio_poll()
       rd=CalSerial.read();
       if( rd==CASIO_RETRY ) {
         // resend already populated buffer
-        cccp_state=CCCP_RECEIVE_VAL;
         cccp_buffer_index=0;
+        cccp_state=CCCP_RECEIVE_VAL;
         break;
       } else if( rd!=CASIO_ACK ) {
         cccp_state=CCCP_IDLE;
         break;
       }
     case CCCP_RECEIVE_0101_0:
-      // TODO: populate :0101 buffer
       cccp_buffer_size=CASIO_R_SIZE; // TODO: ...or _C_SIZE
       memset(cccp_buffer,0,cccp_buffer_size);
       memcpy_P(cccp_buffer,HEADER_0101,5);
       // TODO? send back "unused" response instead of a default value
-      casio_double_fmt(&cccp_buffer[CASIO_B_RE]
+      casio_number_format(&cccp_buffer[CASIO_B_RE]
        ,cccp_actionbox==NULL?CASIO_DEFAULT_VALUE:cccp_actionbox->value);
       cccp_buffer[cccp_buffer_size-1]=casio_checksum(cccp_buffer,cccp_buffer_size-1);
       cccp_buffer_index=0;

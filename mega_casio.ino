@@ -1,7 +1,7 @@
 #include "casio.h"
 #include <stdlib.h>
 
-MailBox my_inbox[]={
+CasioMailBox my_inbox[]={
   MAILBOX('W',false) // request by a calc: number of milliseconds to delay
 #define BOX_WAIT my_inbox[0]
   ,MAILBOX('L',true) // brightness of built-in LED (0..255)
@@ -10,7 +10,7 @@ MailBox my_inbox[]={
 #define BOX_INDEX my_inbox[2] // sent index for subsequent read
 };
 
-MailBox my_outbox[]={
+CasioMailBox my_outbox[]={
   IMMEDIATE('T') // millisecond timer
 #define BOX_MILLIS(v) POST_TO_BOX(my_outbox[0],v)
   ,IMMEDIATE('U') // microsecond timer
@@ -30,11 +30,11 @@ void setup() {
   
   Serial.println("Listening on Serial3" );
 
-  fill_static_links(&my_inbox[0], sizeof(my_inbox)/sizeof(MailBox));
-  fill_static_links(&my_outbox[0], sizeof(my_outbox)/sizeof(MailBox));
-  cccp_inboxes=&my_inbox[0];
-  cccp_outboxes=&my_outbox[0];
-  cccp_hook_receive=&hook_example;
+  fill_static_links(&my_inbox[0], sizeof(my_inbox)/sizeof(CasioMailBox));
+  fill_static_links(&my_outbox[0], sizeof(my_outbox)/sizeof(CasioMailBox));
+  casio_inboxes=&my_inbox[0];
+  casio_outboxes=&my_outbox[0];
+  casio_receive_hook=&hook_example;
   pinMode(LED_BUILTIN,OUTPUT);
   Serial.println("Finished setup" );
 }
