@@ -90,8 +90,10 @@ void loop() {
       wait_started=millis();
       Serial.print(" at ");
       Serial.println(wait_started);
+      Serial.print("Estimated completion at ");
+      Serial.println(wait_started+(long)BOX_WAIT.value);
     } else {
-      if( millis()>wait_started+(long)BOX_INDEX.value ) {
+      if( millis()>wait_started+(long)BOX_WAIT.value ) {
         wait_in_progress=false;
         BOX_WAIT.fresh=false;
         Serial.print("completed WAIT request at ");
