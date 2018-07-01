@@ -1,6 +1,5 @@
 #include <Arduino.h>
-#include "casio.h"
-#include <stdlib.h>
+#include "CasioSerial.h"
 
 CasioMailBox my_inbox[]={
   MAILBOX('W',false) // request by a calc: number of milliseconds to delay
@@ -29,7 +28,8 @@ void setup() {
   // debug and monitoring
   Serial.begin(9600);
 
-  // Setup communication interface
+  // Setup communication interface.
+  // Arduino Mega's Serial3 is communicating over pins 14 and 15.
   casio_serial=&Serial3;
   casio_serial->begin(9600);
   Serial.println("Listening on Serial3" );

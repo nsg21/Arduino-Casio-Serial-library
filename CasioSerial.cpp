@@ -30,7 +30,7 @@
   value after a timeout even if it is not fresh.
 */
 
-#include "casio.h"
+#include "CasioSerial.h"
 
 HardwareSerial *casio_serial=NULL;
 CasioMailBox *casio_inboxes=NULL;
