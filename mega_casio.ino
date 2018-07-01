@@ -114,14 +114,19 @@ void loop() {
    * -- Built-in LED should go full ON
    * 5→L
    * SEND(L)
-   * -- Built-in LED should go dim, but still visible ON
-   * Note that this mailbox is marked immediate.
+   * -- Built-in LED should go dim, but still visible.
    */
   if( BOX_LED.fresh ) {
     analogWrite(LED_BUILTIN,constrain(map((int)BOX_LED.value,0,100,0,255),0,255));
+   /*
+    * Note that this mailbox is marked as .immediate, so technically, there is
+    * no need to clear .fresh bit upon completion of request, but we still do
+    * it anyway.
+    */
     BOX_LED.fresh=false;
   }
-  /* I have irrational fear of busy waiting, so ... */
+
+  /* I have an irrational fear of busy waiting, so ... */
   delay(1);
 
 }
