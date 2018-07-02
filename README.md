@@ -1,4 +1,4 @@
-# Host implementation for Casio Basic SEND/RECEIVE serial interface operators.
+# Host for Casio Basic SEND/RECEIVE operators.
 
 This library enables use of Casio graphing calculators with serial interface
 capabilities as a simple user interface/data storage device for Arduino
@@ -7,18 +7,18 @@ allows the use of Casio Basic to define logic of data presentation and storage.
 
 ## Why Casio
 
-Casio calculators use simple TTL UART serial for communication. Older model are
-5V and can be connected directly to 5V Arduino Boards. Newer models (fx-CG*)
-are 3.3 volts. They feature same exact connector and people would not think
-twice about connecting them with their earlier siblings. I would think Casio
-engineers did the right thing and made newer models 5V tolerant. Having said
-that, I used logic level converter to connect 3.3V Prizm to 5V Mega, just to be
-on a safe side.
+Casio calculators use simple TTL UART serial for communication. Older models
+are 5V and can be connected directly to 5V Arduino Boards. Newer models (e.g.
+fx-CG20 Prizm) are 3.3 volts. They feature same exact connector and people
+would not think twice about connecting them with their earlier siblings. I hope
+Casio engineers did the right thing and made newer models 5V tolerant. Having
+said that, in my design I use logic level converter to connect 3.3V Prizm to 5V
+Mega, just to be on a safe side.
 
 Physical connector is a standard 2.5 mm ("microphone") jack. 
 
-Casio graphing calculators are easy to come by and used older models are often
-very inexpensive.
+Casio graphing calculators are easy to come by and *pre-owned* older models are
+often very inexpensive.
 
 Casio Basic, while far from being state-of-the-art IDE, still provides enough
 flexibility to design simple interfaces. Minor changes and adjustments can be
@@ -47,8 +47,8 @@ used to retrieve sensor values.
 
 The library interfaces with the rest of controller software via *mailboxes*.
 Mailboxes are data structures that hold a name (1 character "alpha-variable" of
-Casio Basic), a value and some flags. There 2 flavors of mailboxes, inboxes and
-outboxes. Each of those can be *immediate* or not.
+Casio Basic), a value and some flags. There are 2 flavors of mailboxes: inboxes
+and outboxes. Each of those can be *immediate* or not.
 
 Outboxes hold data ready to be sent in response to `RECEIVE()` request by a
 calculator. Inboxes is where the data sent by a calculator via `SEND()` go.
@@ -71,7 +71,7 @@ value to its `.value` field and sets its `.fresh` flag.
 
 If the inbox is *immediate* (its `.immediate` flag is `true`), the library
 proceeds with the protocol, confirms the reception of the value to the
-calculator, the SEND() operator successfully completes and the Casio Basic
+calculator, the `SEND()` operator successfully completes and the Casio Basic
 program proceeds in normal fashion.  It is up to the rest of the controller
 software to act upon or ignore the value in `.value` field of a mailbox.
 
@@ -83,8 +83,8 @@ important that control software properly communicates when it is finished
 processing that request.
 
 This flavor can be used to implement actions that take time to complete, like
-driving certain distance. For example `25->D:SEND(D)` would initiate movement
-and the Basic program would be stuck on `SEND()` until control
+driving certain distance. For example if `25→D:SEND(D)` initiates a movement,
+the Basic program will be stuck on `SEND()` until control
 software indicates that it moved the target 25 units. It may take a few seconds
 or a few hours -- `SEND()` will wait patiently for confirmation.
 
@@ -123,6 +123,23 @@ preferrable.
 
 This global must be assigned in `setup()`
 
+### `CasioMailBox`
+
+Data structure that holds mailbox information
+
+```c
+typedef struct casiomailbox {
+  char name; /* 1-character name of Casio Basic variable */
+  bool immediate; /* immediate flag */
+  bool fresh; /* freshness indicator */
+  double value;
+  struct casiomailbox *next; /* link field for linked list */
+} CasioMailBox;
+```
+
+The easiest strategy is to have fixed number of inboxes and outboxes,
+permanently assigned to certain process variables and commands, periodically
+updated/checked by control sofware.
 
 ### `CasioMailBox *casio_inboxes`
 ### `CasioMailBox *casio_outboxes`
@@ -138,6 +155,11 @@ Internal function
 If mailboxes are allocated in static arrays, their link fields need to be
 initialized with `fill_static_links(...)`, e.g.:
 ```c
+CasioMailBox my_inbox[]={
+  {name:'A',immediate:true},
+...
+};
+...
 fill_static_links(&my_inbox[0], sizeof(my_inbox)/sizeof(CasioMailBox));
 fill_static_links(&my_outbox[0], sizeof(my_outbox)/sizeof(CasioMailBox));
 ```
@@ -146,11 +168,15 @@ array, last one points to `NULL`.
 
 ### `void casio_poll(void);`
 
-This procedure implements serial protocols for `SEND()` and `RECEIVE()`
-operators. It populates inboxes with the incoming values and uses values in
+This function implements serial protocols for `SEND()` and `RECEIVE()`
+operators. It listens for incoming bytes, interprets them, populates inboxes
+with the incoming values and uses values in
 outboxes to respond to variable requests.
 
-I took extra care to make it as non-blocking as possible. If it it has to wait for the calculator's response, it returns and resumes protocol from the right point once the bytes from the calculator have arrived.
+I took extra care to make it as non-blocking as possible. If it has to wait
+for the calculator's response, it returns. When called next time, it resumes
+protocol from the previous point once the bytes from the calculator have
+arrived.
 
 It should be called periodically, e.g. in the `loop()` with reasonable
 frequency. In the early phases of protocol calculator is sensitive to timeout,
@@ -166,6 +192,24 @@ This hook is called each time `casio_poll()` sees a `RECEIVE()` request from a
 calculator. It gets the name of the requested variable as its first
 parameter.
 
+## Physical connection
+
+### Using Standard Casio Crossover cable
+
+Attach *ring* terminal of a female 2.5 mm socket to RX pin (possibly through
+logic level voltage converter) and *tip* terminal to the TX pin. Attach
+*base* to ground.
+
+Connect this socket too your calculator using standard Casio serial cable
+("crossover" cable).
+
+### Custom built cable
+
+Make a cable with a male 2.5 mm TRS plug on one end and whatever is convenient
+for your design on the other end. Attach *ring* terminal of a male 2.5 mm plug
+to TX pin, *tip* terminal to RX pin and *base* to ground. Note that connections
+of *ring* and *tip* are switched compared to wiring of a female connector.
+
 ## Examples
 
 Please see the examples.
@@ -173,6 +217,12 @@ Please see the examples.
 ## Copyright
 
 Copyright (C) 2018 nsg21. All rights reserved.
+
+## Acknoledgements
+
+I would like to thank Michael Fenton for describing Casio host protocol in
+"Connecting the PICAXE 08M and PICAXE 18X to the Casio 9750G Plus graphics
+calculator"
 
 ## License
 
