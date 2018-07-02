@@ -32,24 +32,26 @@ a named scalar variable, numbered list, named matrix, or numbered picture.
 This library implements operator variants that work with named scalar variables
 only.
 
-From the calculator's point of view, both SEND() and RECEIVE() are requests to
+From the calculator's point of view, both `SEND()` and `RECEIVE()` are requests to
 a host (server) to save and retrieve given named value respectively.
 
 Arduino acts as such host. It waits for either type of request and when any of
-them arrives, it processes it accordingly. It takes a value sent by SEND() and
-acts on it, or generates a value for a name requested by RECEIVE() and sends it
-back to a calculator.
+them arrives, it processes it accordingly. It takes a value sent by `SEND()`
+and acts on it, or generates a value for a name requested by `RECEIVE()` and
+sends it back to a calculator.
 
-Typically, SEND() can be used to activate actuators and RECEIVE() can be used
-to retrive sensor values.
+Typically, `SEND()` can be used to activate actuators and `RECEIVE()` can be
+used to retrieve sensor values.
 
 ## Mailboxes
 
 The library interfaces with the rest of controller software via *mailboxes*.
-Mailboxes are data structures that hold a name (1 character "alpha-variable" of Casio Basic), a value and some flags. There 2 flavors of mailboxes, inboxes and outboxes. Each of those can be *immediate* or not.
+Mailboxes are data structures that hold a name (1 character "alpha-variable" of
+Casio Basic), a value and some flags. There 2 flavors of mailboxes, inboxes and
+outboxes. Each of those can be *immediate* or not.
 
-Outboxes hold data ready to be sent in response to RECEIVE() request by a
-calculator. Inboxes is where the data sent by a calculator via SEND() go.
+Outboxes hold data ready to be sent in response to `RECEIVE()` request by a
+calculator. Inboxes is where the data sent by a calculator via `SEND()` go.
 
 Inboxes and Outboxes are organized in linked lists with a `.next` field. The
 pointer to the head of inboxes list is called `casio_inboxes`, the pointer to
@@ -111,7 +113,7 @@ for that name.
 
 ### `HardwareSerial *casio_serial`
 
-Physical serial interface which is attached to CASIO communication
+Physical serial interface which is attached to Casio communication.
 It can be `&Serial` on arduinos without extra serial interfaces, but extreme
 care should be taken to ensure that nothing else, especially debug messages
 are transmitted over it.
@@ -129,7 +131,7 @@ Pointers to the heads of linked lists containing inboxes and outboxes
 respectively. Must be assigned in `setup()`.
 
 
-### `fill_static_links(&my_inbox[0], my_inbox_count);
+### `fill_static_links(&my_inbox[0], my_inbox_count);`
 Internal function
 `get_mailbox()` relies on linked list fields to find appropriate box.
 
@@ -139,6 +141,8 @@ initialized with `fill_static_links(...)`, e.g.:
 fill_static_links(&my_inbox[0], sizeof(my_inbox)/sizeof(CasioMailBox));
 fill_static_links(&my_outbox[0], sizeof(my_outbox)/sizeof(CasioMailBox));
 ```
+The function simply sets `.next` of each mailbox to the next element in the
+array, last one points to `NULL`.
 
 ### `void casio_poll(void);`
 
@@ -167,6 +171,8 @@ parameter.
 Please see the examples.
 
 ## Copyright
+
+Copyright (C) 2018 nsg21. All rights reserved.
 
 ## License
 
